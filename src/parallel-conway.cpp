@@ -12,8 +12,10 @@
 #define CL_HPP_ENABLE_EXCEPTIONS
 #include <CL/opencl.hpp>
 
-#define THREADS 50
-#define BLOCK_SIZE 10
+
+#define THREADS 40
+// blocks of 4 by 4
+#define BLOCK_SIZE 8
 
 using std::chrono::microseconds;
 
@@ -118,6 +120,9 @@ public:
         {
             _kernel.setArg(i, _buffers[i]);
         }
+        //add local memory arg
+        //_kernel.setArg(_buffers.size(), cl::LocalSpaceArg);
+        // add a +1 to index for local array
         setKernelArgs(_buffers.size(), args...);
 
         cl::Event event;
@@ -147,6 +152,14 @@ void printWorld(std::vector < int > &world, int N, int M){
     std::cout << std::endl;
 }
 
+void printWorldPlain(std::vector < int > &world, int N, int M){
+    for(int i = 0; i < N*M; i++){
+        std::cout << world[i];
+        if((i+1) % M == 0) std::cout << std::endl;
+    }
+    std::cout << std::endl;
+}
+
 void report(std::string rep){
     std::cout << rep << std::endl;
 }
@@ -154,14 +167,20 @@ void report(std::string rep){
 
 int main(int argc, char const *argv[])
 {
-    if (argc != 4)
+    if (argc != 5)
 	{
-        report("usage: ./openclConway {N} {M} {steps}");
+        report("usage: ./openclConway {N} {M} {steps} {normal | groups}");
 		exit(1);
 	}
 
 	int N = atoi(argv[1]);
 	int M = atoi(argv[2]);
+
+    int type = atoi(argv[4]);
+    if(type != 0 && type != 1){
+        report("usage: ./openclConway {N} {M} {steps} {type: 0|1}");
+		exit(1);
+    }
 
 
     try
@@ -183,6 +202,11 @@ int main(int argc, char const *argv[])
         report("World created:");
         printWorld(dCurrent, N, M);
 
+        // allocate space for local memory?
+        // a group of BLOCK_SIZE x BLOCK_SIZE + todos los cell que lo rodean
+        //int localSize = (BLOCK_SIZE + 2) * (BLOCK_SIZE + 2);
+        //cl::LocalSpaceArg localmem = cl::Local(sizeof(int) * localSize);
+
         // Copy values from host variables to device
         t_start = std::chrono::high_resolution_clock::now();
         q.addBuffer(dCurrent, CL_MEM_READ_ONLY);
@@ -193,12 +217,13 @@ int main(int argc, char const *argv[])
         report("Values copied to device");
 
         // Read the program source
-        q.setKernel("CalcStep.cl", "calcStep");
-        report("Kernel sent to device");
+        std::string source = type ? "bin/CalcStepGroups.cl" : "bin/CalcStep.cl";
+        q.setKernel(source, "calcStep");
+        report("Kernel " + source + " sent to device");
 
         // Execute the function on the device 
-        cl::NDRange globalSize(THREADS);
-        cl::NDRange localSize(BLOCK_SIZE);
+        cl::NDRange globalSize(THREADS, THREADS);
+        cl::NDRange localSize(BLOCK_SIZE, BLOCK_SIZE);
 
         t_start = std::chrono::high_resolution_clock::now();
 
@@ -216,13 +241,15 @@ int main(int argc, char const *argv[])
             // Copy the output variable from device to host
             // Copies it to current, for next step
             q.readBuffer(dNext, 1);
-            printWorld(dNext, N, M);
+            //printWorld(dNext, N, M);
 
             //write data in dNext to buffer index 0 (dCurrent)
             q.updateBuffer(dNext, 0);
         }
 
-        report("Finished cycle");
+        report("Finished cycle\nResult:");
+
+        printWorld(dNext, N, M);
 
         t_end = std::chrono::high_resolution_clock::now();
         auto t_kernel =

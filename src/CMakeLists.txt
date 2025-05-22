@@ -1,6 +1,7 @@
 
 
 file(COPY CalcStep.cl DESTINATION ${PROJECT_SOURCE_DIR}/bin/)
+file(COPY CalcStepGroups.cl DESTINATION ${PROJECT_SOURCE_DIR}/bin/)
 
 
 add_executable(openclConway parallel-conway.cpp)
